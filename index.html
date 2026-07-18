@@ -11,7 +11,7 @@
 <nav>
   <h1>Бронирование массажа</h1>
   <button id="nav-main" class="active" onclick="showView('main')">Главная</button>
-  <button id="nav-admin" onclick="showView('admin')">Админ</button>
+  <button id="nav-admin" onclick="showView('admin')" style="display:none">Мои клиенты</button>
   <span style="flex:1"></span>
   <span id="nav-auth-user" style="display:none;color:#fff;font-size:.9rem"></span>
   <button id="nav-auth-register" onclick="openRegisterModal()" style="background:none;border:1px solid rgba(255,255,255,.5)">Регистрация</button>
@@ -22,18 +22,45 @@
 <div class="container">
 
 <div id="main-section" class="section active">
-  <div class="calendar-nav">
-    <button onclick="prevMonth()">&larr;</button>
-    <h2 id="month-label"></h2>
-    <button onclick="nextMonth()">&rarr;</button>
+  <div class="main-content">
+    <div class="left-panel">
+      <div id="my-bookings-guest" style="display:none">
+        <h3 style="margin-bottom:12px">Мои записи</h3>
+        <p style="color:#777;font-size:.9rem">Войдите или зарегистрируйтесь, чтобы отслеживать свои записи на массаж.</p>
+      </div>
+      <div id="my-bookings-auth" style="display:none">
+        <h3 id="my-bookings-title" style="margin-bottom:12px">Мои записи</h3>
+        <div id="my-bookings-list"></div>
+        <p id="my-bookings-empty" class="loading-msg">Нет активных записей</p>
+      </div>
+      <div id="my-bookings-admin" style="display:none">
+        <div id="my-bookings-admin-today">
+          <h3 style="margin-bottom:8px">Сегодня</h3>
+          <div id="my-bookings-admin-today-list"></div>
+          <p id="my-bookings-admin-today-empty" class="loading-msg" style="padding:8px;font-size:.8rem">Нет записей</p>
+        </div>
+        <div id="my-bookings-admin-tomorrow">
+          <h3 style="margin-bottom:8px;margin-top:16px">Завтра</h3>
+          <div id="my-bookings-admin-tomorrow-list"></div>
+          <p id="my-bookings-admin-tomorrow-empty" class="loading-msg" style="padding:8px;font-size:.8rem">Нет записей</p>
+        </div>
+      </div>
+    </div>
+    <div class="right-panel">
+      <div class="calendar-nav">
+        <button onclick="prevMonth()">&larr;</button>
+        <h2 id="month-label"></h2>
+        <button onclick="nextMonth()">&rarr;</button>
+      </div>
+      <div class="legend">
+        <span class="legend-item"><span class="legend-dot available"></span> Свободно</span>
+        <span class="legend-item"><span class="legend-dot booked"></span> Занято</span>
+        <span class="legend-item"><span class="legend-dot past"></span> Прошедшие</span>
+      </div>
+      <div id="calendar" class="calendar-grid"></div>
+      <div id="calendar-loading" class="loading-msg">Загрузка...</div>
+    </div>
   </div>
-  <div class="legend">
-    <span class="legend-item"><span class="legend-dot available"></span> Свободно</span>
-    <span class="legend-item"><span class="legend-dot booked"></span> Занято</span>
-    <span class="legend-item"><span class="legend-dot past"></span> Прошедшие</span>
-  </div>
-  <div id="calendar" class="calendar-grid"></div>
-  <div id="calendar-loading" class="loading-msg">Загрузка...</div>
 </div>
 
 <div id="admin-section" class="section">

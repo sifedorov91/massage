@@ -37,16 +37,17 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 |-------|------|-----------|
 | GET | `/api/calendar` | `year`, `month` |
 | GET | `/api/available-slots` | `date_str=YYYY-MM-DD` |
+| GET | `/api/my-bookings` | `?token=` → `{bookings: [{appointment_date, appointment_time, is_confirmed}]}` |
 | POST | `/api/book` | body: `{full_name, phone, date, time}` или `{token, date, time}` |
-| POST | `/api/auth/register` | body: `{full_name, phone, password}` → `{token, full_name}` |
-| POST | `/api/auth/login` | body: `{phone, password}` → `{token, full_name}` |
-| GET | `/api/auth/me` | `?token=` → `{full_name, phone}` |
-| GET | `/api/admin/bookings` | `password=admin123` |
-| POST | `/api/admin/confirm/{id}` | `password=admin123` |
-| DELETE | `/api/admin/delete/{id}` | `password=admin123` |
+| POST | `/api/auth/register` | body: `{full_name, phone, password}` → `{token, full_name, role}` |
+| POST | `/api/auth/login` | body: `{phone, password}` → `{token, full_name, role}` |
+| GET | `/api/auth/me` | `?token=` → `{full_name, phone, role}` |
+| GET | `/api/admin/bookings` | `password=admin123` **или** `token=<admin_token>` |
+| POST | `/api/admin/confirm/{id}` | `password=admin123` **или** `token=<admin_token>` |
+| DELETE | `/api/admin/delete/{id}` | `password=admin123` **или** `token=<admin_token>` |
 | POST | `/api/admin/change-password` | body: `{current_password, new_password}` |
-| GET | `/api/admin/users` | `password=admin123` |
-| DELETE | `/api/admin/user/{id}` | `password=admin123` |
+| GET | `/api/admin/users` | `password=admin123` **или** `token=<admin_token>` |
+| DELETE | `/api/admin/user/{id}` | `password=admin123` **или** `token=<admin_token>` |
 
 ## Особенности
 

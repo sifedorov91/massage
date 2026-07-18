@@ -79,6 +79,28 @@ nav button.active{background:#fff;color:#2d7d46;border-color:#fff}
 .admin-tab{background:transparent;border:1px solid #ccc;padding:6px 16px;border-radius:6px;cursor:pointer;font-size:.85rem;color:#555}
 .admin-tab.active{background:#2d7d46;color:#fff;border-color:#2d7d46}
 
+.main-content{display:flex;gap:24px;align-items:flex-start}
+.left-panel{flex:0 0 300px;min-width:0}
+.right-panel{flex:1;min-width:0}
+.my-booking-card{background:#fff;border-radius:8px;padding:12px;margin-bottom:8px;border:1px solid #e0e0e0;font-size:.85rem}
+.my-booking-card .booking-date{font-weight:600;margin-bottom:4px}
+.my-booking-card .booking-time{color:#555}
+.my-booking-card .booking-status{display:inline-block;padding:2px 8px;border-radius:4px;font-size:.75rem;font-weight:600;margin-top:6px}
+.my-booking-card .booking-status.confirmed{background:#e8f5e9;color:#2d7d46}
+.my-booking-card .booking-status.pending{background:#fff3e0;color:#f57c00}
+.my-booking-card .booking-client{font-weight:600;margin-bottom:2px}
+.my-booking-card .booking-phone{color:#777;font-size:.8rem;margin-bottom:4px}
+.day-cell.my-booking-day{box-shadow:inset 0 0 0 3px #1565c0}
+.my-booking-card .booking-actions{display:flex;gap:4px;margin-top:8px}
+.my-booking-card .booking-actions button{padding:4px 10px;border:none;border-radius:4px;cursor:pointer;font-size:.75rem;font-weight:600}
+.btn-confirm-sm{background:#4caf50;color:#fff}
+.btn-confirm-sm:hover{background:#388e3c}
+.btn-delete-sm{background:#d32f2f;color:#fff}
+.btn-delete-sm:hover{background:#b71c1c}
+@media(max-width:700px){
+  .main-content{flex-direction:column}
+  .left-panel{flex:none;width:100%}
+}
 @media(max-width:600px){
   .container{padding:12px}
   .calendar-grid{gap:2px}

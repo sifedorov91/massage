@@ -36,11 +36,16 @@ def init_db():
             phone TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             token TEXT,
+            role TEXT NOT NULL DEFAULT 'user',
             created_at TEXT DEFAULT (datetime('now'))
         )
     """)
     try:
         conn.execute("ALTER TABLE clients ADD COLUMN user_id INTEGER REFERENCES users(id)")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
     except sqlite3.OperationalError:
         pass
     conn.execute("""
@@ -52,6 +57,13 @@ def init_db():
     conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
         ("admin_password", "admin123")
+    )
+
+    admin_pw_hash = hashlib.sha256(b"admin123").hexdigest()
+    admin_token = secrets.token_hex(32)
+    conn.execute(
+        "INSERT OR IGNORE INTO users (full_name, phone, password_hash, token, role) VALUES (?, ?, ?, ?, ?)",
+        ("Администратор", "admin", admin_pw_hash, admin_token, "admin")
     )
     conn.commit()
     conn.close()
@@ -65,6 +77,18 @@ def get_admin_password():
     row = cursor.fetchone()
     conn.close()
     return row["value"] if row else "admin123"
+
+def check_admin(password="", token=""):
+    if password and password == get_admin_password():
+        return True
+    if token:
+        conn = get_db()
+        cursor = conn.execute("SELECT id FROM users WHERE token = ? AND role = ?", (token, "admin"))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            return True
+    raise HTTPException(status_code=403, detail="Доступ запрещён")
 
 class BookingRequest(BaseModel):
     full_name: str = ""
@@ -124,12 +148,12 @@ async def register(req: AuthRegisterRequest):
     pw_hash = hashlib.sha256(req.password.encode()).hexdigest()
     token = secrets.token_hex(32)
     conn.execute(
-        "INSERT INTO users (full_name, phone, password_hash, token) VALUES (?, ?, ?, ?)",
-        (name, phone, pw_hash, token)
+        "INSERT INTO users (full_name, phone, password_hash, token, role) VALUES (?, ?, ?, ?, ?)",
+        (name, phone, pw_hash, token, "user")
     )
     conn.commit()
     conn.close()
-    return {"token": token, "full_name": name}
+    return {"token": token, "full_name": name, "role": "user"}
 
 
 @app.post("/api/auth/login")
@@ -154,7 +178,7 @@ async def login(req: AuthLoginRequest):
     conn.execute("UPDATE users SET token = ? WHERE id = ?", (token, user["id"]))
     conn.commit()
     conn.close()
-    return {"token": token, "full_name": user["full_name"]}
+    return {"token": token, "full_name": user["full_name"], "role": user["role"]}
 
 
 @app.get("/api/auth/me")
@@ -162,16 +186,16 @@ async def get_me(token: str):
     if not token:
         raise HTTPException(401, "Требуется авторизация")
     conn = get_db()
-    cursor = conn.execute("SELECT full_name, phone FROM users WHERE token = ?", (token,))
+    cursor = conn.execute("SELECT full_name, phone, role FROM users WHERE token = ?", (token,))
     user = cursor.fetchone()
     conn.close()
     if not user:
         raise HTTPException(401, "Недействительный токен")
-    return {"full_name": user["full_name"], "phone": user["phone"]}
+    return {"full_name": user["full_name"], "phone": user["phone"], "role": user["role"]}
 
 
 @app.get("/api/calendar")
-async def get_calendar(year: int, month: int):
+async def get_calendar(year: int, month: int, token: str = ""):
     today = date.today()
     now = datetime.now()
 
@@ -181,6 +205,17 @@ async def get_calendar(year: int, month: int):
         (str(year), f"{month:02d}")
     )
     rows = cursor.fetchall()
+
+    my_dates = set()
+    if token:
+        cursor = conn.execute("SELECT id FROM users WHERE token = ?", (token,))
+        user = cursor.fetchone()
+        if user:
+            cursor = conn.execute(
+                "SELECT appointment_date FROM clients WHERE user_id = ? AND strftime('%Y', appointment_date) = ? AND strftime('%m', appointment_date) = ?",
+                (user["id"], str(year), f"{month:02d}")
+            )
+            my_dates = set(r["appointment_date"] for r in cursor.fetchall())
     conn.close()
 
     booked_by_date = defaultdict(set)
@@ -201,12 +236,14 @@ async def get_calendar(year: int, month: int):
                 "is_past": len(available) == 0,
                 "is_full": len(available) == 0,
                 "slots_remaining": len(available),
+                "has_my_booking": date_str in my_dates,
             }
         else:
             days[str(day)] = {
                 "is_past": d < today,
                 "is_full": len(booked) >= TOTAL_SLOTS,
                 "slots_remaining": max(0, TOTAL_SLOTS - len(booked)),
+                "has_my_booking": date_str in my_dates,
             }
 
     return {"days": days, "year": year, "month": month}
@@ -293,10 +330,28 @@ async def book_appointment(booking: BookingRequest):
     return {"success": True, "message": "Запись успешно создана!"}
 
 
+@app.get("/api/my-bookings")
+async def get_my_bookings(token: str):
+    if not token:
+        raise HTTPException(401, "Требуется авторизация")
+    conn = get_db()
+    cursor = conn.execute("SELECT id, full_name FROM users WHERE token = ?", (token,))
+    user = cursor.fetchone()
+    if not user:
+        conn.close()
+        raise HTTPException(401, "Недействительный токен")
+    cursor = conn.execute(
+        "SELECT appointment_date, appointment_time, is_confirmed FROM clients WHERE user_id = ? ORDER BY appointment_date, appointment_time",
+        (user["id"],)
+    )
+    bookings = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return {"bookings": bookings}
+
+
 @app.get("/api/admin/bookings")
-async def get_bookings(password: str):
-    if password != get_admin_password():
-        raise HTTPException(status_code=403, detail="Неверный пароль")
+async def get_bookings(password: str = "", token: str = ""):
+    check_admin(password, token)
 
     conn = get_db()
     cursor = conn.execute("""
@@ -311,9 +366,8 @@ async def get_bookings(password: str):
 
 
 @app.post("/api/admin/confirm/{booking_id}")
-async def confirm_booking(booking_id: int, password: str):
-    if password != get_admin_password():
-        raise HTTPException(status_code=403, detail="Неверный пароль")
+async def confirm_booking(booking_id: int, password: str = "", token: str = ""):
+    check_admin(password, token)
 
     conn = get_db()
     conn.execute("UPDATE clients SET is_confirmed = 1 WHERE id = ?", (booking_id,))
@@ -323,9 +377,8 @@ async def confirm_booking(booking_id: int, password: str):
 
 
 @app.delete("/api/admin/delete/{booking_id}")
-async def delete_booking(booking_id: int, password: str):
-    if password != get_admin_password():
-        raise HTTPException(status_code=403, detail="Неверный пароль")
+async def delete_booking(booking_id: int, password: str = "", token: str = ""):
+    check_admin(password, token)
 
     conn = get_db()
     conn.execute("DELETE FROM clients WHERE id = ?", (booking_id,))
@@ -335,9 +388,8 @@ async def delete_booking(booking_id: int, password: str):
 
 
 @app.get("/api/admin/users")
-async def get_users(password: str):
-    if password != get_admin_password():
-        raise HTTPException(status_code=403, detail="Неверный пароль")
+async def get_users(password: str = "", token: str = ""):
+    check_admin(password, token)
 
     conn = get_db()
     cursor = conn.execute("""
@@ -353,9 +405,8 @@ async def get_users(password: str):
 
 
 @app.delete("/api/admin/user/{user_id}")
-async def delete_user(user_id: int, password: str):
-    if password != get_admin_password():
-        raise HTTPException(status_code=403, detail="Неверный пароль")
+async def delete_user(user_id: int, password: str = "", token: str = ""):
+    check_admin(password, token)
 
     conn = get_db()
     conn.execute("DELETE FROM clients WHERE user_id = ?", (user_id,))

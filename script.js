@@ -7,6 +7,7 @@ const state = {
   adminPassword: null,
   userToken: localStorage.getItem('user_token') || null,
   userName: localStorage.getItem('user_name') || null,
+  userRole: localStorage.getItem('user_role') || null,
 };
 
 function daysInMonth(y,m){return new Date(y,m,0).getDate()}
@@ -37,6 +38,7 @@ function showView(view){
     if(state.adminPassword)loadAdminPanel();
   }else{
     renderCalendar();
+    loadMyBookings();
   }
 }
 
@@ -51,17 +53,20 @@ function updateAuthUI(){
   const regBtn=document.getElementById('nav-auth-register');
   const loginBtn=document.getElementById('nav-auth-login');
   const logoutBtn=document.getElementById('nav-auth-logout');
+  const adminBtn=document.getElementById('nav-admin');
   if(state.userToken && state.userName){
     userEl.style.display='inline';
     userEl.textContent=state.userName;
     regBtn.style.display='none';
     loginBtn.style.display='none';
     logoutBtn.style.display='inline-block';
+    adminBtn.style.display=state.userRole==='admin'?'inline-block':'none';
   }else{
     userEl.style.display='none';
     regBtn.style.display='inline-block';
     loginBtn.style.display='inline-block';
     logoutBtn.style.display='none';
+    adminBtn.style.display='none';
   }
 }
 
@@ -102,10 +107,14 @@ async function submitLogin(){
     });
     state.userToken=data.token;
     state.userName=data.full_name;
+    state.userRole=data.role||'user';
     localStorage.setItem('user_token',data.token);
     localStorage.setItem('user_name',data.full_name);
+    localStorage.setItem('user_role',state.userRole);
+    if(state.userRole==='admin')state.adminPassword='admin123';
     closeModalById('login-modal-overlay');
     updateAuthUI();
+    loadMyBookings();
     showToast('Вы вошли как '+data.full_name,'success');
   }catch(e){
     errEl.textContent=e.message;errEl.style.display='block';
@@ -131,10 +140,13 @@ async function submitRegister(){
     });
     state.userToken=data.token;
     state.userName=data.full_name;
+    state.userRole=data.role||'user';
     localStorage.setItem('user_token',data.token);
     localStorage.setItem('user_name',data.full_name);
+    localStorage.setItem('user_role',state.userRole);
     closeModalById('register-modal-overlay');
     updateAuthUI();
+    loadMyBookings();
     showToast('Регистрация успешна!','success');
   }catch(e){
     errEl.textContent=e.message;errEl.style.display='block';
@@ -145,9 +157,13 @@ async function submitRegister(){
 function logoutUser(){
   state.userToken=null;
   state.userName=null;
+  state.userRole=null;
   localStorage.removeItem('user_token');
   localStorage.removeItem('user_name');
+  localStorage.removeItem('user_role');
+  if(document.getElementById('admin-section').classList.contains('active'))showView('main');
   updateAuthUI();
+  loadMyBookings();
   showToast('Вы вышли','success');
 }
 
@@ -173,7 +189,8 @@ async function renderCalendar(){
   document.getElementById('month-label').textContent=MONTHS[state.month-1]+' '+state.year;
 
   try{
-    const data=await fetchJSON(`/api/calendar?year=${state.year}&month=${state.month}`);
+    const tok=state.userToken?`&token=${encodeURIComponent(state.userToken)}`:'';
+    const data=await fetchJSON(`/api/calendar?year=${state.year}&month=${state.month}${tok}`);
     loading.style.display='none';
     renderCalendarGrid(data.days);
   }catch(e){
@@ -221,6 +238,7 @@ function renderCalendarGrid(days){
     }
 
     if(dateStr===today)cell.classList.add('today');
+    if(info&&info.has_my_booking)cell.classList.add('my-booking-day');
     cell.textContent=day;
     if(info&&!info.is_past&&info.slots_remaining>0&&info.slots_remaining<=3){
       const badge=document.createElement('span');
@@ -230,6 +248,123 @@ function renderCalendarGrid(days){
     }
     el.appendChild(cell);
   }
+}
+
+async function loadMyBookings(){
+  const guestEl=document.getElementById('my-bookings-guest');
+  const authEl=document.getElementById('my-bookings-auth');
+  const adminEl=document.getElementById('my-bookings-admin');
+
+  if(!state.userToken){
+    guestEl.style.display='block';
+    authEl.style.display='none';
+    adminEl.style.display='none';
+    return;
+  }
+
+  if(state.userRole==='admin'){
+    guestEl.style.display='none';
+    authEl.style.display='none';
+    adminEl.style.display='block';
+    const todayEl=document.getElementById('my-bookings-admin-today');
+    const tomorrowEl=document.getElementById('my-bookings-admin-tomorrow');
+    const todayList=document.getElementById('my-bookings-admin-today-list');
+    const tomorrowList=document.getElementById('my-bookings-admin-tomorrow-list');
+    const todayEmpty=document.getElementById('my-bookings-admin-today-empty');
+    const tomorrowEmpty=document.getElementById('my-bookings-admin-tomorrow-empty');
+    todayList.innerHTML='';
+    tomorrowList.innerHTML='';
+    todayEmpty.style.display='none';
+    tomorrowEmpty.style.display='none';
+    try{
+      const authParam=state.userToken?`token=${encodeURIComponent(state.userToken)}`:`password=${encodeURIComponent(state.adminPassword)}`;
+      const data=await fetchJSON(`/api/admin/bookings?${authParam}`);
+      const today=todayStr();
+      const tomorrow=new Date();
+      tomorrow.setDate(tomorrow.getDate()+1);
+      const tomorrowStr=tomorrow.getFullYear()+'-'+pad(tomorrow.getMonth()+1)+'-'+pad(tomorrow.getDate());
+
+      const todays=data.bookings.filter(b=>b.appointment_date===today);
+      const tomorrows=data.bookings.filter(b=>b.appointment_date===tomorrowStr);
+
+      if(todays.length===0) todayEmpty.style.display='block';
+      else renderAdminBookings(todayList,todays);
+
+      if(tomorrows.length===0) tomorrowEmpty.style.display='block';
+      else renderAdminBookings(tomorrowList,tomorrows);
+    }catch(e){showToast(e.message,'error')}
+    return;
+  }
+
+  guestEl.style.display='none';
+  adminEl.style.display='none';
+  authEl.style.display='block';
+  const listEl=document.getElementById('my-bookings-list');
+  const emptyEl=document.getElementById('my-bookings-empty');
+
+  try{
+    const data=await fetchJSON(`/api/my-bookings?token=${encodeURIComponent(state.userToken)}`);
+    listEl.innerHTML='';
+    if(data.bookings.length===0){
+      emptyEl.style.display='block';
+      return;
+    }
+    emptyEl.style.display='none';
+    data.bookings.forEach(b=>{
+      const card=document.createElement('div');
+      card.className='my-booking-card';
+      const confirmed=!!b.is_confirmed;
+      card.innerHTML=`
+        <div class="booking-date">${b.appointment_date}</div>
+        <div class="booking-time">${b.appointment_time}</div>
+        <span class="booking-status ${confirmed?'confirmed':'pending'}">${confirmed?'Подтверждено':'Ожидает'}</span>
+      `;
+      listEl.appendChild(card);
+    });
+  }catch(e){
+    showToast(e.message,'error');
+  }
+}
+
+function renderAdminBookings(container, bookings){
+  bookings.sort((a,b)=>a.appointment_time.localeCompare(b.appointment_time));
+  bookings.forEach(b=>{
+    const card=document.createElement('div');
+    card.className='my-booking-card';
+    const confirmed=!!b.is_confirmed;
+    const clientName=b.user_name||b.full_name;
+    const clientPhone=b.user_phone||b.phone;
+    card.innerHTML=`
+      <div class="booking-time">${b.appointment_time}</div>
+      <div class="booking-client">${escapeHtml(clientName)}</div>
+      <div class="booking-phone">${escapeHtml(clientPhone)}</div>
+      <span class="booking-status ${confirmed?'confirmed':'pending'}">${confirmed?'Подтверждено':'Ожидает'}</span>
+      <div class="booking-actions">
+        ${confirmed?'':`<button class="btn-confirm-sm" onclick="adminConfirmFromCard(${b.id})">Подтвердить</button>`}
+        <button class="btn-delete-sm" onclick="adminDeleteFromCard(${b.id})">Отменить</button>
+      </div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+async function adminConfirmFromCard(id){
+  try{
+    const authParam=state.userToken?`token=${encodeURIComponent(state.userToken)}`:`password=${encodeURIComponent(state.adminPassword)}`;
+    await fetchJSON(`/api/admin/confirm/${id}?${authParam}`,{method:'POST'});
+    showToast('Бронь подтверждена','success');
+    loadMyBookings();
+  }catch(e){showToast(e.message,'error')}
+}
+
+async function adminDeleteFromCard(id){
+  if(!confirm('Отменить запись?'))return;
+  try{
+    const authParam=state.userToken?`token=${encodeURIComponent(state.userToken)}`:`password=${encodeURIComponent(state.adminPassword)}`;
+    await fetchJSON(`/api/admin/delete/${id}?${authParam}`,{method:'DELETE'});
+    showToast('Запись отменена','success');
+    loadMyBookings();
+  }catch(e){showToast(e.message,'error')}
 }
 
 function prevMonth(){
@@ -366,7 +501,8 @@ async function loadAdminBookings(){
   tbody.innerHTML='';
 
   try{
-    const data=await fetchJSON(`/api/admin/bookings?password=${encodeURIComponent(state.adminPassword)}`);
+    const authParam=state.userToken?`token=${encodeURIComponent(state.userToken)}`:`password=${encodeURIComponent(state.adminPassword)}`;
+    const data=await fetchJSON(`/api/admin/bookings?${authParam}`);
     loading.style.display='none';
     if(data.bookings.length===0){
       tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:#888;padding:20px">Нет броней</td></tr>';
@@ -414,7 +550,8 @@ async function loadAdminUsers(){
   tbody.innerHTML='';
 
   try{
-    const data=await fetchJSON(`/api/admin/users?password=${encodeURIComponent(state.adminPassword)}`);
+    const authParam=state.userToken?`token=${encodeURIComponent(state.userToken)}`:`password=${encodeURIComponent(state.adminPassword)}`;
+    const data=await fetchJSON(`/api/admin/users?${authParam}`);
     loading.style.display='none';
     if(data.users.length===0){
       tbody.innerHTML='<tr><td colspan="5" style="text-align:center;color:#888;padding:20px">Нет пользователей</td></tr>';
@@ -440,7 +577,8 @@ async function loadAdminUsers(){
 async function adminDeleteUser(id){
   if(!confirm('Удалить пользователя и все его записи?'))return;
   try{
-    await fetchJSON(`/api/admin/user/${id}?password=${encodeURIComponent(state.adminPassword)}`,{method:'DELETE'});
+    const authParam=state.userToken?`token=${encodeURIComponent(state.userToken)}`:`password=${encodeURIComponent(state.adminPassword)}`;
+    await fetchJSON(`/api/admin/user/${id}?${authParam}`,{method:'DELETE'});
     showToast('Пользователь удалён','success');
     loadAdminUsers();
     loadAdminBookings();
@@ -449,7 +587,8 @@ async function adminDeleteUser(id){
 
 async function adminConfirm(id){
   try{
-    await fetchJSON(`/api/admin/confirm/${id}?password=${encodeURIComponent(state.adminPassword)}`,{method:'POST'});
+    const authParam=state.userToken?`token=${encodeURIComponent(state.userToken)}`:`password=${encodeURIComponent(state.adminPassword)}`;
+    await fetchJSON(`/api/admin/confirm/${id}?${authParam}`,{method:'POST'});
     showToast('Бронь подтверждена','success');
     loadAdminPanel();
   }catch(e){showToast(e.message,'error')}
@@ -458,7 +597,8 @@ async function adminConfirm(id){
 async function adminDelete(id){
   if(!confirm('Удалить бронь?'))return;
   try{
-    await fetchJSON(`/api/admin/delete/${id}?password=${encodeURIComponent(state.adminPassword)}`,{method:'DELETE'});
+    const authParam=state.userToken?`token=${encodeURIComponent(state.userToken)}`:`password=${encodeURIComponent(state.adminPassword)}`;
+    await fetchJSON(`/api/admin/delete/${id}?${authParam}`,{method:'DELETE'});
     showToast('Бронь отменена','success');
     loadAdminPanel();
   }catch(e){showToast(e.message,'error')}
@@ -522,11 +662,20 @@ initView();
 updateAuthUI();
 
 if(state.userToken){
-  fetchJSON('/api/auth/me?token='+encodeURIComponent(state.userToken)).catch(()=>{
+  fetchJSON('/api/auth/me?token='+encodeURIComponent(state.userToken)).then(d=>{
+    state.userRole=d.role;
+    localStorage.setItem('user_role',d.role||'user');
+    if(d.role==='admin')state.adminPassword='admin123';
+    updateAuthUI();
+    loadMyBookings();
+  }).catch(()=>{
     state.userToken=null;
     state.userName=null;
+    state.userRole=null;
     localStorage.removeItem('user_token');
     localStorage.removeItem('user_name');
+    localStorage.removeItem('user_role');
     updateAuthUI();
+    loadMyBookings();
   });
 }
