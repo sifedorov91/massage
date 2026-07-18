@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 import sqlite3
 from datetime import date, datetime
 from pydantic import BaseModel
@@ -63,6 +63,14 @@ class ChangePasswordRequest(BaseModel):
 
 TOTAL_SLOTS = 11
 
+
+@app.get("/style.css")
+async def serve_css():
+    return FileResponse("style.css", media_type="text/css")
+
+@app.get("/script.js")
+async def serve_js():
+    return FileResponse("script.js", media_type="application/javascript")
 
 @app.get("/")
 @app.get("/admin")
