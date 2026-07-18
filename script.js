@@ -5,6 +5,8 @@ const state = {
   year: new Date().getFullYear(),
   month: new Date().getMonth() + 1,
   adminPassword: null,
+  userToken: localStorage.getItem('user_token') || null,
+  userName: localStorage.getItem('user_name') || null,
 };
 
 function daysInMonth(y,m){return new Date(y,m,0).getDate()}
@@ -42,6 +44,111 @@ function initView(){
   const path=window.location.pathname;
   if(path==='/admin')showView('admin');
   else showView('main');
+}
+
+function updateAuthUI(){
+  const userEl=document.getElementById('nav-auth-user');
+  const regBtn=document.getElementById('nav-auth-register');
+  const loginBtn=document.getElementById('nav-auth-login');
+  const logoutBtn=document.getElementById('nav-auth-logout');
+  if(state.userToken && state.userName){
+    userEl.style.display='inline';
+    userEl.textContent=state.userName;
+    regBtn.style.display='none';
+    loginBtn.style.display='none';
+    logoutBtn.style.display='inline-block';
+  }else{
+    userEl.style.display='none';
+    regBtn.style.display='inline-block';
+    loginBtn.style.display='inline-block';
+    logoutBtn.style.display='none';
+  }
+}
+
+function closeModalById(id){
+  document.getElementById(id).classList.remove('active');
+}
+
+function openLoginModal(){
+  document.getElementById('login-phone').value='';
+  document.getElementById('login-password').value='';
+  document.getElementById('login-error').style.display='none';
+  document.getElementById('login-submit').disabled=false;
+  document.getElementById('login-modal-overlay').classList.add('active');
+}
+
+function openRegisterModal(){
+  document.getElementById('reg-name').value='';
+  document.getElementById('reg-phone').value='';
+  document.getElementById('reg-password').value='';
+  document.getElementById('register-error').style.display='none';
+  document.getElementById('register-submit').disabled=false;
+  document.getElementById('register-modal-overlay').classList.add('active');
+}
+
+async function submitLogin(){
+  const phone=document.getElementById('login-phone').value.trim();
+  const password=document.getElementById('login-password').value;
+  const errEl=document.getElementById('login-error');
+  if(!phone){errEl.textContent='Укажите телефон';errEl.style.display='block';return}
+  if(!password){errEl.textContent='Укажите пароль';errEl.style.display='block';return}
+  errEl.style.display='none';
+  const btn=document.getElementById('login-submit');
+  btn.disabled=true;btn.textContent='Вход...';
+  try{
+    const data=await fetchJSON('/api/auth/login',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({phone,password}),
+    });
+    state.userToken=data.token;
+    state.userName=data.full_name;
+    localStorage.setItem('user_token',data.token);
+    localStorage.setItem('user_name',data.full_name);
+    closeModalById('login-modal-overlay');
+    updateAuthUI();
+    showToast('Вы вошли как '+data.full_name,'success');
+  }catch(e){
+    errEl.textContent=e.message;errEl.style.display='block';
+    btn.disabled=false;btn.textContent='Войти';
+  }
+}
+
+async function submitRegister(){
+  const name=document.getElementById('reg-name').value.trim();
+  const phone=document.getElementById('reg-phone').value.trim();
+  const password=document.getElementById('reg-password').value;
+  const errEl=document.getElementById('register-error');
+  if(!name){errEl.textContent='Укажите ФИО';errEl.style.display='block';return}
+  if(!phone){errEl.textContent='Укажите телефон';errEl.style.display='block';return}
+  if(password.length<4){errEl.textContent='Минимум 4 символа';errEl.style.display='block';return}
+  errEl.style.display='none';
+  const btn=document.getElementById('register-submit');
+  btn.disabled=true;btn.textContent='Регистрация...';
+  try{
+    const data=await fetchJSON('/api/auth/register',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({full_name:name,phone,password}),
+    });
+    state.userToken=data.token;
+    state.userName=data.full_name;
+    localStorage.setItem('user_token',data.token);
+    localStorage.setItem('user_name',data.full_name);
+    closeModalById('register-modal-overlay');
+    updateAuthUI();
+    showToast('Регистрация успешна!','success');
+  }catch(e){
+    errEl.textContent=e.message;errEl.style.display='block';
+    btn.disabled=false;btn.textContent='Зарегистрироваться';
+  }
+}
+
+function logoutUser(){
+  state.userToken=null;
+  state.userName=null;
+  localStorage.removeItem('user_token');
+  localStorage.removeItem('user_name');
+  updateAuthUI();
+  showToast('Вы вышли','success');
 }
 
 async function fetchJSON(url, opts){
@@ -139,9 +246,20 @@ function nextMonth(){
 
 async function openBooking(dateStr,slotsRemaining){
   document.getElementById('modal-date-info').textContent='Дата: '+dateStr;
-  document.getElementById('modal-name').value='';
-  document.getElementById('modal-phone').value='';
-  document.getElementById('modal-phone').focus();
+
+  const guestFields=document.getElementById('booking-guest-fields');
+  const userInfo=document.getElementById('booking-user-info');
+  if(state.userToken){
+    guestFields.style.display='none';
+    userInfo.style.display='block';
+    userInfo.textContent='Запись от имени: '+state.userName;
+  }else{
+    guestFields.style.display='block';
+    userInfo.style.display='none';
+    document.getElementById('modal-name').value='';
+    document.getElementById('modal-phone').value='';
+  }
+
   document.getElementById('modal-error').style.display='none';
   document.getElementById('modal-submit').disabled=true;
   document.getElementById('modal-submit').textContent='Загрузка...';
@@ -178,16 +296,23 @@ function closeModal(){
 }
 
 async function submitBooking(){
-  const name=document.getElementById('modal-name').value.trim();
-  const rawPhone=document.getElementById('modal-phone').value.replace(/\D/g,'');
-  const phone='+7'+rawPhone;
   const time=document.getElementById('modal-time').value;
   const dateText=document.getElementById('modal-date-info').textContent.replace('Дата: ','');
   const errEl=document.getElementById('modal-error');
+  let body;
 
-  if(!name){errEl.textContent='Укажите ФИО';errEl.style.display='block';return}
-  if(!rawPhone||rawPhone.length<10){errEl.textContent='Укажите телефон полностью';errEl.style.display='block';return}
-  if(!time){errEl.textContent='Выберите время';errEl.style.display='block';return}
+  if(state.userToken){
+    if(!time){errEl.textContent='Выберите время';errEl.style.display='block';return}
+    body={token:state.userToken, date:dateText, time};
+  }else{
+    const name=document.getElementById('modal-name').value.trim();
+    const rawPhone=document.getElementById('modal-phone').value.replace(/\D/g,'');
+    const phone='+7'+rawPhone;
+    if(!name){errEl.textContent='Укажите ФИО';errEl.style.display='block';return}
+    if(!rawPhone||rawPhone.length<10){errEl.textContent='Укажите телефон полностью';errEl.style.display='block';return}
+    if(!time){errEl.textContent='Выберите время';errEl.style.display='block';return}
+    body={full_name:name, phone, date:dateText, time};
+  }
 
   errEl.style.display='none';
   const btn=document.getElementById('modal-submit');
@@ -198,7 +323,7 @@ async function submitBooking(){
     await fetchJSON('/api/book',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({full_name:name,phone:phone,date:dateText,time:time}),
+      body:JSON.stringify(body),
     });
     closeModal();
     showToast('Запись успешно создана!','success');
@@ -222,6 +347,19 @@ function adminLogin(){
 async function loadAdminPanel(){
   document.getElementById('admin-login').style.display='none';
   document.getElementById('admin-panel').style.display='block';
+  adminSwitchTab('bookings');
+}
+
+function adminSwitchTab(tab){
+  document.getElementById('admin-tab-bookings').classList.toggle('active',tab==='bookings');
+  document.getElementById('admin-tab-users').classList.toggle('active',tab==='users');
+  document.getElementById('admin-bookings-section').style.display=tab==='bookings'?'block':'none';
+  document.getElementById('admin-users-section').style.display=tab==='users'?'block':'none';
+  if(tab==='bookings')loadAdminBookings();
+  else loadAdminUsers();
+}
+
+async function loadAdminBookings(){
   const loading=document.getElementById('admin-loading');
   const tbody=document.getElementById('admin-table-body');
   loading.style.display='block';
@@ -237,9 +375,11 @@ async function loadAdminPanel(){
     data.bookings.forEach(b=>{
       const tr=document.createElement('tr');
       const confirmed=!!b.is_confirmed;
+      const clientName=b.user_name||b.full_name;
+      const clientPhone=b.user_phone||b.phone;
       tr.innerHTML=`
-        <td>${escapeHtml(b.full_name)}</td>
-        <td>${escapeHtml(b.phone)}</td>
+        <td>${escapeHtml(clientName)}${b.user_name?'':' <span style="color:#999;font-size:.75rem">(гость)</span>'}</td>
+        <td>${escapeHtml(clientPhone)}</td>
         <td>${b.appointment_date}</td>
         <td>${b.appointment_time}</td>
         <td class="${confirmed?'status-confirmed':'status-pending'}">${confirmed?'Подтверждено':'Не подтверждено'}</td>
@@ -265,6 +405,46 @@ async function loadAdminPanel(){
       showToast(e.message,'error');
     }
   }
+}
+
+async function loadAdminUsers(){
+  const loading=document.getElementById('admin-users-loading');
+  const tbody=document.getElementById('admin-users-body');
+  loading.style.display='block';
+  tbody.innerHTML='';
+
+  try{
+    const data=await fetchJSON(`/api/admin/users?password=${encodeURIComponent(state.adminPassword)}`);
+    loading.style.display='none';
+    if(data.users.length===0){
+      tbody.innerHTML='<tr><td colspan="5" style="text-align:center;color:#888;padding:20px">Нет пользователей</td></tr>';
+      return;
+    }
+    data.users.forEach(u=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`
+        <td>${escapeHtml(u.full_name)}</td>
+        <td>${escapeHtml(u.phone)}</td>
+        <td>${u.bookings_count}</td>
+        <td>${u.created_at}</td>
+        <td><button class="btn-delete" onclick="adminDeleteUser(${u.id})">Удалить</button></td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }catch(e){
+    loading.style.display='none';
+    showToast(e.message,'error');
+  }
+}
+
+async function adminDeleteUser(id){
+  if(!confirm('Удалить пользователя и все его записи?'))return;
+  try{
+    await fetchJSON(`/api/admin/user/${id}?password=${encodeURIComponent(state.adminPassword)}`,{method:'DELETE'});
+    showToast('Пользователь удалён','success');
+    loadAdminUsers();
+    loadAdminBookings();
+  }catch(e){showToast(e.message,'error')}
 }
 
 async function adminConfirm(id){
@@ -339,3 +519,14 @@ function escapeHtml(s){
 
 window.addEventListener('popstate',()=>initView());
 initView();
+updateAuthUI();
+
+if(state.userToken){
+  fetchJSON('/api/auth/me?token='+encodeURIComponent(state.userToken)).catch(()=>{
+    state.userToken=null;
+    state.userName=null;
+    localStorage.removeItem('user_token');
+    localStorage.removeItem('user_name');
+    updateAuthUI();
+  });
+}

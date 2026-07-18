@@ -16,7 +16,9 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ## Структура
 
 - `main.py` — **единственный файл бекенда**: FastAPI app, SQLite инициализация, Pydantic модели, все API роуты, раздача HTML
-- `index.html` — **SPA**: вёрстка, календарь на чистом JS, модальное окно бронирования, админ-панель. Вся маршрутизация клиентская (pushState / popstate)
+- `index.html` — **SPA**: вёрстка. Вся маршрутизация клиентская (pushState / popstate)
+- `style.css` — все стили
+- `script.js` — весь JS (календарь, модальные окна, админ-панель, работа с API)
 - `bookings.db` — создаётся автоматически при запуске (`CREATE TABLE IF NOT EXISTS`), без миграций. Используется PRAGMA journal_mode=WAL
 - Синхронный sqlite3 (не async) в FastAPI endpoint'ах
 
@@ -26,6 +28,8 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 |------|----------------|
 | `GET /` | Сервер отдаёт index.html |
 | `GET /admin` | Сервер отдаёт **тот же** index.html; JS переключает вьюху |
+| `GET /style.css` | Статика (явный роут) |
+| `GET /script.js` | Статика (явный роут) |
 
 ## API
 
@@ -33,11 +37,16 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 |-------|------|-----------|
 | GET | `/api/calendar` | `year`, `month` |
 | GET | `/api/available-slots` | `date_str=YYYY-MM-DD` |
-| POST | `/api/book` | body: `{full_name, phone, date, time}` |
+| POST | `/api/book` | body: `{full_name, phone, date, time}` или `{token, date, time}` |
+| POST | `/api/auth/register` | body: `{full_name, phone, password}` → `{token, full_name}` |
+| POST | `/api/auth/login` | body: `{phone, password}` → `{token, full_name}` |
+| GET | `/api/auth/me` | `?token=` → `{full_name, phone}` |
 | GET | `/api/admin/bookings` | `password=admin123` |
 | POST | `/api/admin/confirm/{id}` | `password=admin123` |
 | DELETE | `/api/admin/delete/{id}` | `password=admin123` |
 | POST | `/api/admin/change-password` | body: `{current_password, new_password}` |
+| GET | `/api/admin/users` | `password=admin123` |
+| DELETE | `/api/admin/user/{id}` | `password=admin123` |
 
 ## Особенности
 

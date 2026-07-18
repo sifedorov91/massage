@@ -76,6 +76,8 @@ nav button.active{background:#fff;color:#2d7d46;border-color:#fff}
 .btn-confirm:hover{background:#388e3c}
 .btn-delete{background:#d32f2f;color:#fff}
 .btn-delete:hover{background:#b71c1c}
+.admin-tab{background:transparent;border:1px solid #ccc;padding:6px 16px;border-radius:6px;cursor:pointer;font-size:.85rem;color:#555}
+.admin-tab.active{background:#2d7d46;color:#fff;border-color:#2d7d46}
 
 @media(max-width:600px){
   .container{padding:12px}
